@@ -28,7 +28,7 @@ st.title("📝 요양원 실습일지 생성기")
 st.caption("시간대를 직접 선택하고 간단한 키워드만 적어 실습일지를 작성하세요.")
 
 # 2. API 키 설정
-api_key = st.sidebar.text_input("Gemini API Key 입력", type="password")
+api_key = st.secrets.get("GEMINI_API_KEY") or st.sidebar.text_input("Gemini API Key 입력", type="password")
 
 if not api_key:
     st.info("👈 왼쪽 사이드바에 Gemini API Key를 입력해 주세요.")
