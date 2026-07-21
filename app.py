@@ -14,7 +14,7 @@ st.set_page_config(
 # LocalStorage 객체 생성
 local_storage = LocalStorage()
 
-# 커스텀 CSS
+# 커스텀 CSS (버튼 스타일 및 태그 최적화)
 st.markdown("""
     <style>
     .stButton>button {
@@ -26,11 +26,21 @@ st.markdown("""
     .stTextArea textarea {
         font-size: 16px !important;
     }
+    .keyword-badge {
+        display: inline-block;
+        background-color: #e1f5fe;
+        color: #0288d1;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        margin-right: 4px;
+        margin-bottom: 4px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("📝 실습일지")
-st.caption("시간대별로 작성 후 [💾 임시 저장]을 누르면 앱을 닫아도 안전하게 유지됩니다.")
+st.caption("키워드 버튼을 눌러 메모를 채우고 [💾 임시 저장]을 활용해 보세요.")
 
 # 2. API 키 설정 (Secrets 자동 불러오기)
 api_key = st.secrets.get("GEMINI_API_KEY") or st.sidebar.text_input("Gemini API Key 입력", type="password")
@@ -77,21 +87,26 @@ time_options = [
     "직접 입력"
 ]
 
-# 4. 활동 내역 작성 섹션
+# 4. 카테고리별 추천 키워드 데이터 사전
+KEYWORD_CATEGORIES = {
+    "🧹 환경/위생": ["생활실 청소", "침구 정리", "환기 및 소독", "배식 준비", "식당 정리", "물품/세탁물 정리"],
+    "🤝 일상지원": ["식사보조", "배설보조", "이동보조(휠체어)", "세면/목욕 보조", "체위변경", "낙상예방"],
+    "🎨 여가/프로그램": ["실버 레크리에이션", "인지활동(색칠/퍼즐)", "음악치료", "원예/미술활동", "체조/운동"],
+    "💬 라운딩/정서": ["말벗 활동", "개별 라운딩", "어르신 욕구 파악", "정서적 지지", "가족 면회 지원"],
+    "📖 사정/행정": ["초기면접 참관", "욕구사정 참관", "상담일지 작성", "사례회의 참관", "서류 정리"],
+    "💡 관찰/전문용어": ["라포형성", "자기결정권 존중", "잔존능력 유지", "임파워먼트", "클라이언트 중심", "인권감수성"]
+}
+
+# 5. 활동 내역 작성 섹션
 st.subheader("⏰ 활동 내역 작성")
 
-preset_keywords = ["환경정리 및 위생", "인지재활 보조", "식사 수발", "케어록 작성", "말벗 서비스", "산책 및 이동보조"]
-st.write("💡 **추천 키워드:** " + ", ".join(preset_keywords))
-st.write("")
-
 activities_data = []
-v = st.session_state.reset_version  # 리셋 버전 태그
+v = st.session_state.reset_version
 
 for idx in range(st.session_state.activity_count):
     with st.container():
         st.markdown(f"**활동 {idx + 1}**")
         
-        # 저장된 값 매핑
         saved_time = st.session_state.draft_data.get(f"time_{idx}", time_options[min(idx, len(time_options)-2)])
         saved_name = st.session_state.draft_data.get(f"name_{idx}", "")
         saved_detail = st.session_state.draft_data.get(f"detail_{idx}", "")
@@ -109,7 +124,23 @@ for idx in range(st.session_state.activity_count):
             final_time = selected_time
 
         act_name = st.text_input(f"활동명 #{idx + 1}", value=saved_name, key=f"name_{v}_{idx}", placeholder="예: 인지재활 프로그램 보조")
-        act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=saved_detail, key=f"detail_{v}_{idx}", placeholder="예: 어르신 퍼즐 맞추기 보조, 집중력 저하 관찰함", height=70)
+        
+        # --- 키워드 버튼 클릭 시 메모에 추가되는 익스팬더 ---
+        with st.expander(f"💡 활동 #{idx + 1} 키워드 클릭해서 메모에 넣기"):
+            selected_cat = st.radio(f"카테고리 선택 #{idx+1}", list(KEYWORD_CATEGORIES.keys()), horizontal=True, key=f"cat_{v}_{idx}")
+            st.caption("원하는 단어를 누르면 아래 메모 칸에 자동으로 추가됩니다:")
+            
+            # 버튼들을 가로로 나열
+            kw_cols = st.columns(3)
+            for k_i, kw in enumerate(KEYWORD_CATEGORIES[selected_cat]):
+                with kw_cols[k_i % 3]:
+                    if st.button(kw, key=f"kw_btn_{v}_{idx}_{selected_cat}_{k_i}"):
+                        current_val = st.session_state.get(f"detail_{v}_{idx}", saved_detail)
+                        new_val = f"{current_val}, {kw}" if current_val else kw
+                        st.session_state[f"detail_{v}_{idx}"] = new_val
+                        st.rerun()
+
+        act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=saved_detail, key=f"detail_{v}_{idx}", placeholder="위 키워드 버튼을 누르거나 직접 메모를 적으세요.", height=70)
         
         # 실시간 상태 보존
         st.session_state.draft_data[f"time_{idx}"] = final_time
@@ -136,12 +167,10 @@ with col2:
         st.toast("스마트폰/PC 브라우저에 안전하게 저장되었습니다!", icon="✅")
 with col3:
     if st.button("🗑️ 전체 비우기"):
-        # 1) 메모리 데이터 비우기
         st.session_state.draft_data = {}
         st.session_state.activity_count = 3
         st.session_state.reset_version += 1
         
-        # 2) 브라우저 저장소 데이터 및 로컬스토리지 완전 삭제 자바스크립트 실행
         st.components.v1.html(
             f"""
             <script>
@@ -152,18 +181,19 @@ with col3:
             height=0
         )
 
-# 5. AI 생성 프롬프트
+# 6. AI 생성 프롬프트 (키워드를 학술적·실천적 사회복지 용어로 다듬는 지침 강화)
 def generate_log(data):
     model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = f"""
     당신은 노인복지시설(요양원) 사회복지 현장실습일지를 작성하는 전문 에이전트입니다.
-    입력된 데이터(시간대, 활동명, 메모)를 바탕으로 각 시간대별 [활동 내용 및 방법]을 작성해 주세요.
+    입력된 데이터(시간대, 활동명, 메모/키워드)를 바탕으로 각 시간대별 [활동 내용 및 방법]을 고급스러운 사회복지 전문 문장으로 작성해 주세요.
 
     [작성 규칙 - 필수 준수]
-    1. 각 시간대마다 '활동한 내용', '관찰한 사항', '배운 점'이 완벽히 어우러진 **단 한 문장**으로만 작성하세요.
-    2. 불릿(•)이나 항목을 나누지 말고, '~(하)였으며, ~를 관찰하였고, ~를 배움.' 형태로 하나의 매끄러운 문장으로 구성하세요.
-    3. 문장 끝은 개조식인 '~함', '~를 배움' 등으로 매끄럽게 마무리하세요.
+    1. 메모에 단어나 키워드(예: 식사보조, 라포형성, 자기결정권)만 나열되어 있더라도, 이를 매끄럽고 전문적인 '사회복지실천 문장'으로 발전시키세요.
+    2. 각 시간대마다 '활동한 내용', '관찰한 사항', '배운 점(전문용어 포함)'이 완벽히 어우러진 **단 한 문장**으로만 작성하세요.
+    3. 불릿(•)이나 항목을 나누지 말고, '~(하)였으며, ~를 관찰하였고, ~를 배움.' 형태로 하나의 매끄러운 문장으로 구성하세요.
+    4. 문장 끝은 개조식인 '~함', '~를 배움' 등으로 매끄럽게 마무리하세요.
 
     [입력 데이터]
     {data}
@@ -181,13 +211,13 @@ def generate_log(data):
     response = model.generate_model_content(prompt) if hasattr(model, 'generate_model_content') else model.generate_content(prompt)
     return response.text
 
-# 6. 생성 결과 표시
+# 7. 생성 결과 표시
 st.write("")
 if st.button("🚀 실습일지 문장 생성하기", type="primary"):
     if not activities_data:
         st.warning("최소 하나 이상의 활동 정보를 입력해 주세요!")
     else:
-        with st.spinner("활동, 관찰, 배운 점을 한 문장으로 다듬는 중입니다..."):
+        with st.spinner("선택하신 키워드를 활용하여 전문 사회복지 실습문장을 다듬는 중입니다..."):
             try:
                 result = generate_log(activities_data)
                 st.success("작성이 완료되었습니다!")
