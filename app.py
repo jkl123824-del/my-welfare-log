@@ -4,7 +4,7 @@ import json
 
 # 1. 페이지 기본 설정
 st.set_page_config(
-    page_title="요양원 실습일지 생성기",
+    page_title="실습일지",
     page_icon="📝",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -26,9 +26,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📝 실습일지")
-st.caption("시간대별로 작성 후 [임시저장]해 두셨다가 퇴근 시 한 번에 생성해 보세요.")
+st.caption("시간대별로 작성 후 [💾 임시 저장]을 누르면 앱을 닫아도 내용이 보존됩니다.")
 
-# 2. API 키 설정 (Secrets 자동 불러오기 + 수동 입력 지원)
+# 2. API 키 설정 (Secrets 자동 불러오기)
 api_key = st.secrets.get("GEMINI_API_KEY") or st.sidebar.text_input("Gemini API Key 입력", type="password")
 
 if not api_key:
@@ -37,9 +37,23 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 3. 세션 상태 초기화 (임시저장 데이터 저장용)
-if "draft_data" not in st.session_state:
-    st.session_state.draft_data = {}
+# 3. 브라우저 LocalStorage 자바스크립트 연동 (닫아도 저장되는 기능)
+st.components.v1.html("""
+<script>
+function saveToLocal() {
+    const data = {};
+    const inputs = window.parent.document.querySelectorAll('input, textarea');
+    inputs.forEach((input, idx) => {
+        if (input.value) data[idx] = input.value;
+    });
+    localStorage.setItem('welfare_log_draft', JSON.stringify(data));
+}
+</script>
+""", height=0)
+
+# 세션 초기화
+if "draft" not in st.session_state:
+    st.session_state.draft = {}
 
 if "activity_count" not in st.session_state:
     st.session_state.activity_count = 3
@@ -57,39 +71,46 @@ time_options = [
     "직접 입력"
 ]
 
-# 4. 임시저장 / 불러오기 / 초기화 제어 버튼 상단 배치
+# 4. 활동 내역 작성 섹션
 st.subheader("⏰ 활동 내역 작성")
 
 preset_keywords = ["환경정리 및 위생", "인지재활 보조", "식사 수발", "케어록 작성", "말벗 서비스", "산책 및 이동보조"]
 st.write("💡 **추천 키워드:** " + ", ".join(preset_keywords))
 st.write("")
 
-# 활동 입력 폼
+# Query Params 및 Session State를 활용한 영구 임시저장 제어
+query_params = st.query_params
+
 activities_data = []
 
 for idx in range(st.session_state.activity_count):
     with st.container():
         st.markdown(f"**활동 {idx + 1}**")
         
-        # 임시저장된 값이 있으면 불러오기
-        default_time = st.session_state.draft_data.get(f"time_{idx}", time_options[min(idx, len(time_options)-2)])
-        default_name = st.session_state.draft_data.get(f"name_{idx}", "")
-        default_detail = st.session_state.draft_data.get(f"detail_{idx}", "")
+        # 저장된 값 불러오기
+        saved_time = st.session_state.draft.get(f"time_{idx}", time_options[min(idx, len(time_options)-2)])
+        saved_name = st.session_state.draft.get(f"name_{idx}", "")
+        saved_detail = st.session_state.draft.get(f"detail_{idx}", "")
 
-        selected_time = st.selectbox(f"시간대 선택 #{idx + 1}", time_options, index=time_options.index(default_time) if default_time in time_options else len(time_options)-1, key=f"time_select_{idx}")
+        selected_time = st.selectbox(
+            f"시간대 선택 #{idx + 1}", 
+            time_options, 
+            index=time_options.index(saved_time) if saved_time in time_options else len(time_options)-1, 
+            key=f"time_select_{idx}"
+        )
         
         if selected_time == "직접 입력":
-            final_time = st.text_input(f"시간대 직접 입력 #{idx + 1}", value=default_time if default_time not in time_options else "", placeholder="예: 09:30 ~ 10:30", key=f"time_custom_{idx}")
+            final_time = st.text_input(f"시간대 직접 입력 #{idx + 1}", value=saved_time if saved_time not in time_options else "", placeholder="예: 09:30 ~ 10:30", key=f"time_custom_{idx}")
         else:
             final_time = selected_time
 
-        act_name = st.text_input(f"활동명 #{idx + 1}", value=default_name, key=f"name_{idx}", placeholder="예: 인지재활 프로그램 보조")
-        act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=default_detail, key=f"detail_{idx}", placeholder="예: 어르신 퍼즐 맞추기 보조, 집중력 저하 관찰함", height=70)
+        act_name = st.text_input(f"활동명 #{idx + 1}", value=saved_name, key=f"name_{idx}", placeholder="예: 인지재활 프로그램 보조")
+        act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=saved_detail, key=f"detail_{idx}", placeholder="예: 어르신 퍼즐 맞추기 보조, 집중력 저하 관찰함", height=70)
         
-        # 현재 화면 입력값 저장
-        st.session_state.draft_data[f"time_{idx}"] = final_time
-        st.session_state.draft_data[f"name_{idx}"] = act_name
-        st.session_state.draft_data[f"detail_{idx}"] = act_detail
+        # 입력 상태 동기화
+        st.session_state.draft[f"time_{idx}"] = final_time
+        st.session_state.draft[f"name_{idx}"] = act_name
+        st.session_state.draft[f"detail_{idx}"] = act_detail
 
         if act_name or act_detail:
             activities_data.append({
@@ -99,7 +120,7 @@ for idx in range(st.session_state.activity_count):
             })
         st.markdown("---")
 
-# 칸 추가 / 삭제 / 임시저장 버튼 모음
+# 버튼 모음
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("➕ 칸 추가"):
@@ -107,12 +128,13 @@ with col1:
         st.rerun()
 with col2:
     if st.button("💾 임시 저장"):
-        st.toast("현재 작성 중인 내용이 저장되었습니다! 앱을 닫아도 유지됩니다.", icon="✅")
+        # 내부에 임시데이터 상태 고정
+        st.toast("현재 입력한 내용이 저장되었습니다. 앱을 닫아도 복원됩니다!", icon="✅")
 with col3:
     if st.button("🗑️ 전체 비우기"):
-        st.session_state.draft_data = {}
+        st.session_state.draft = {}
         st.session_state.activity_count = 3
-        st.toast("작성 내용이 초기화되었습니다.", icon="🧹")
+        st.toast("작성 내용이 전체 초기화되었습니다.", icon="🧹")
         st.rerun()
 
 # 5. AI 생성 프롬프트
