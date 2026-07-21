@@ -41,8 +41,11 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 3. LocalStorage에서 임시 저장된 데이터 복원
+# 3. LocalStorage 및 리셋 버전을 위한 세션 초기화
 STORAGE_KEY = "welfare_log_draft_data"
+
+if "reset_version" not in st.session_state:
+    st.session_state.reset_version = 0
 
 if "draft_loaded" not in st.session_state:
     st.session_state.draft_loaded = False
@@ -82,6 +85,7 @@ st.write("💡 **추천 키워드:** " + ", ".join(preset_keywords))
 st.write("")
 
 activities_data = []
+v = st.session_state.reset_version  # 리셋 버전 태그
 
 for idx in range(st.session_state.activity_count):
     with st.container():
@@ -96,16 +100,16 @@ for idx in range(st.session_state.activity_count):
             f"시간대 선택 #{idx + 1}", 
             time_options, 
             index=time_options.index(saved_time) if saved_time in time_options else len(time_options)-1, 
-            key=f"time_select_{idx}"
+            key=f"time_select_{v}_{idx}"
         )
         
         if selected_time == "직접 입력":
-            final_time = st.text_input(f"시간대 직접 입력 #{idx + 1}", value=saved_time if saved_time not in time_options else "", placeholder="예: 09:30 ~ 10:30", key=f"time_custom_{idx}")
+            final_time = st.text_input(f"시간대 직접 입력 #{idx + 1}", value=saved_time if saved_time not in time_options else "", placeholder="예: 09:30 ~ 10:30", key=f"time_custom_{v}_{idx}")
         else:
             final_time = selected_time
 
-        act_name = st.text_input(f"활동명 #{idx + 1}", value=saved_name, key=f"name_{idx}", placeholder="예: 인지재활 프로그램 보조")
-        act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=saved_detail, key=f"detail_{idx}", placeholder="예: 어르신 퍼즐 맞추기 보조, 집중력 저하 관찰함", height=70)
+        act_name = st.text_input(f"활동명 #{idx + 1}", value=saved_name, key=f"name_{v}_{idx}", placeholder="예: 인지재활 프로그램 보조")
+        act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=saved_detail, key=f"detail_{v}_{idx}", placeholder="예: 어르신 퍼즐 맞추기 보조, 집중력 저하 관찰함", height=70)
         
         # 실시간 상태 보존
         st.session_state.draft_data[f"time_{idx}"] = final_time
@@ -132,18 +136,12 @@ with col2:
         st.toast("스마트폰/PC 브라우저에 안전하게 저장되었습니다!", icon="✅")
 with col3:
     if st.button("🗑️ 전체 비우기"):
-        # 1) 입력 위젯들의 세션 데이터 초기화 (화면 글자 지우기)
-        for idx in range(st.session_state.activity_count):
-            if f"name_{idx}" in st.session_state:
-                st.session_state[f"name_{idx}"] = ""
-            if f"detail_{idx}" in st.session_state:
-                st.session_state[f"detail_{idx}"] = ""
-            if f"time_custom_{idx}" in st.session_state:
-                st.session_state[f"time_custom_{idx}"] = ""
-
-        # 2) 임시 데이터 상태 및 개수 초기화
+        # 1) 메모리 데이터 비우기
         st.session_state.draft_data = {}
         st.session_state.activity_count = 3
+        
+        # 2) 입력 위젯 리셋을 위해 버전 카운트 변경
+        st.session_state.reset_version += 1
         
         # 3) 브라우저 LocalStorage 삭제
         try:
