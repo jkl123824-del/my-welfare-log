@@ -128,18 +128,30 @@ with col1:
         st.rerun()
 with col2:
     if st.button("💾 임시 저장"):
-        # 브라우저 LocalStorage에 데이터 영구 저장
         local_storage.setItem(STORAGE_KEY, json.dumps(st.session_state.draft_data))
         st.toast("스마트폰/PC 브라우저에 안전하게 저장되었습니다!", icon="✅")
 with col3:
     if st.button("🗑️ 전체 비우기"):
+        # 1) 입력 위젯들의 세션 데이터 초기화 (화면 글자 지우기)
+        for idx in range(st.session_state.activity_count):
+            if f"name_{idx}" in st.session_state:
+                st.session_state[f"name_{idx}"] = ""
+            if f"detail_{idx}" in st.session_state:
+                st.session_state[f"detail_{idx}"] = ""
+            if f"time_custom_{idx}" in st.session_state:
+                st.session_state[f"time_custom_{idx}"] = ""
+
+        # 2) 임시 데이터 상태 및 개수 초기화
         st.session_state.draft_data = {}
         st.session_state.activity_count = 3
+        
+        # 3) 브라우저 LocalStorage 삭제
         try:
             local_storage.deleteItem(STORAGE_KEY)
         except Exception:
-            pass  # 이미 삭제되었거나 없어도 에러 없이 무시하고 진행
-        st.toast("임시 저장 내용이 초기화되었습니다.", icon="🧹")
+            pass
+
+        st.toast("임시 저장 내용이 완전히 비워졌습니다.", icon="🧹")
         st.rerun()
 
 # 5. AI 생성 프롬프트
