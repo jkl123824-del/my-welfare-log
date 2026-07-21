@@ -25,7 +25,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📝 요양원 실습일지 생성기")
+st.title("📝 실습일지")
 st.caption("시간대별로 작성 후 [임시저장]해 두셨다가 퇴근 시 한 번에 생성해 보세요.")
 
 # 2. API 키 설정 (Secrets 자동 불러오기 + 수동 입력 지원)
