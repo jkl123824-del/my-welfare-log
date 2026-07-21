@@ -14,7 +14,7 @@ st.set_page_config(
 # LocalStorage 객체 생성
 local_storage = LocalStorage()
 
-# 커스텀 CSS (버튼 스타일 및 태그 최적화)
+# 커스텀 CSS
 st.markdown("""
     <style>
     .stButton>button {
@@ -30,7 +30,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📝 실습일지")
-st.caption("다양한 키워드 버튼을 눌러 20일간 다채로운 실습일지를 작성해 보세요.")
+st.caption("키워드를 선택하고 간단히 메모하면 제출용 실습일지 양식으로 완성해 줍니다.")
 
 # 2. API 키 설정 (Secrets 자동 불러오기)
 api_key = st.secrets.get("GEMINI_API_KEY") or st.sidebar.text_input("Gemini API Key 입력", type="password")
@@ -77,7 +77,7 @@ time_options = [
     "직접 입력"
 ]
 
-# 4. 카테고리별 전체 키워드 데이터 사전 (제시해주신 키워드 전체 세분화 반영)
+# 4. 카테고리별 추천 키워드 사전
 KEYWORD_CATEGORIES = {
     "🧹 환경/위생": [
         "생활실 청소", "침구 정리", "환기", "소독 및 방역", 
@@ -140,14 +140,13 @@ for idx in range(st.session_state.activity_count):
         else:
             final_time = selected_time
 
-        act_name = st.text_input(f"활동명 #{idx + 1}", value=saved_name, key=f"name_{v}_{idx}", placeholder="예: 인지재활 프로그램 보조")
+        act_name = st.text_input(f"활동명 #{idx + 1}", value=saved_name, key=f"name_{v}_{idx}", placeholder="예: 출근 및 청소, 라운딩 및 말벗 등")
         
-        # --- 키워드 선택 영역 ---
+        # 키워드 선택 영역
         with st.expander(f"💡 활동 #{idx + 1} 추천 키워드 선택해서 메모에 넣기"):
             selected_cat = st.selectbox(f"카테고리 선택 #{idx+1}", list(KEYWORD_CATEGORIES.keys()), key=f"cat_{v}_{idx}")
             st.caption("원하는 단어를 클릭하면 아래 메모 칸에 자동으로 추가됩니다:")
             
-            # 버튼들을 3열로 배치
             kw_list = KEYWORD_CATEGORIES[selected_cat]
             kw_cols = st.columns(3)
             for k_i, kw in enumerate(kw_list):
@@ -158,9 +157,8 @@ for idx in range(st.session_state.activity_count):
                         st.session_state[f"detail_{v}_{idx}"] = new_val
                         st.rerun()
 
-        act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=saved_detail, key=f"detail_{v}_{idx}", placeholder="위 키워드 버튼을 누르거나 생각나는 내용을 자유롭게 적으세요.", height=70)
+        act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=saved_detail, key=f"detail_{v}_{idx}", placeholder="특이사항이나 기억나는 어르신 반응, 배운 점을 메모해 보세요.", height=70)
         
-        # 실시간 상태 보존
         st.session_state.draft_data[f"time_{idx}"] = final_time
         st.session_state.draft_data[f"name_{idx}"] = act_name
         st.session_state.draft_data[f"detail_{idx}"] = act_detail
@@ -192,42 +190,41 @@ with col3:
         st.components.v1.html(
             f"""
             <script>
-                window.parent.localStorage realm.removeItem('{STORAGE_KEY}');
+                window.parent.localStorage.removeItem('{STORAGE_KEY}');
                 window.parent.location.reload();
             </script>
             """,
             height=0
         )
 
-# 6. AI 생성 프롬프트 (실습생다운 솔직하고 자연스러운 톤앤매너로 교정)
+# 6. AI 생성 프롬프트 (사용자 예시 양식 완벽 반영)
 def generate_log(data):
     model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = f"""
-    당신은 노인복지시설(요양원)에서 현장실습을 하고 있는 '사회복지 전공 실습생'입니다.
-    입력된 데이터(시간대, 활동명, 메모/키워드)를 바탕으로 각 시간대별 [활동 내용 및 방법]을 솔직하고 정성스러운 실습생 어조로 작성해 주세요.
+    당신은 노인복지시설(요양원)에서 현장실습을 하는 사회복지 전공 실습생입니다.
+    아래 [입력 데이터]를 바탕으로 예시 양식과 완전히 동일한 스타일로 실습일지를 완성해 주세요.
 
-    [작성 어조 및 톤앤매너 - 필수 준수]
-    1. 너무 학술적이거나 거창한 전문가(연구원/시설장) 어조를 피하고, **현장에서 직접 배우고 깨닫는 실습생의 솔직한 시선**으로 작성하세요.
-    2. 전문용어(예: 자기결정권, 라포형성 등)는 한 문장에 과도하게 남발하지 말고, **자연스럽게 1개 정도만 녹여내어** 실습생다운 진정성을 살리세요.
-    3. 각 시간대마다 '내가 직접 수행한 일', '어르신이나 현장을 관찰한 점', '이를 통해 배운 솔직한 점'이 매끄럽게 어우러진 **단 한 문장**으로 작성하세요.
-    4. 불릿(•)이나 항목을 나누지 말고, '~(하)였으며, ~를 관찰하였고, ~를 배움.' 형태로 하나의 매끄러운 문장으로 구성하세요.
-    5. 문장 끝은 개조식인 '~함', '~를 배움', '~를 알게 됨' 등으로 자연스럽게 마무리하세요.
+    [작성 양식 및 규칙 - 필수 준수]
+    1. 제목 구성: "시간대 (활동명)" 형태로 서두를 시작하세요. (예: 09:00 ~ 10:00 (출근 및 청소))
+    2. 본문 문단 구성: 각 시간대별로 [내가 직접 한 일/목적 ➔ 현장 관찰 사항 및 어르신 반응 ➔ 실습생으로서 느낀 점 및 배운 점]을 자연스럽게 2~3문장의 하나의 문단으로 작성하세요.
+    3. 어조: 너무 딱딱하거나 연구원 같은 문체 대신, 현장에서 배우며 성찰하는 솔직하고 진정성 있는 '실습생 어조'(~하였다, ~를 알게 되었다, ~를 배웠다)를 유지하세요.
+    4. 실습생의견: 입력된 당일 전체 활동을 종합하여 [오늘 가장 인상 깊었던 일 ➔ 이를 통해 깨달은 사회복지 실천 배움 ➔ 아쉬웠던 점 및 다음 실습에서의 다짐]이 포함된 1개의 정성스러운 문단으로 작성하세요.
 
     [입력 데이터]
     {data}
 
-    [출력 양식 예시]
-    ■ 활동 내용 및 방법
+    [출력 양식 예시 - 아래 양식 그대로 출력할 것]
+    활동 내용 및 방법
 
-    [09:00 ~ 10:00] 센터위생 및 환경정리
-    • 아침 출근 후 생활실 환기와 소독을 도우며 하루 일과를 준비하였고, 쾌적한 환경 조성이 어르신들의 건강과 직결된다는 점을 배움.
+    09:00 ~ 10:00 (출근 및 청소)
+    출근 후 어르신들의 생활실을 청소하고 환기를 진행하였다. 침구와 바닥을 정리하며 위생 관리에 신경 썼는데, 특히 감염 예방과 쾌적한 생활환경 조성을 위해 청결 유지가 중요하다는 점을 염두에 두고 작업하였다. 이를 통해 단순한 청소 업무도 어르신의 건강과 직결되는 사회복지사의 중요한 역할임을 알게 되었다.
 
-    [10:00 ~ 11:00] 인지재활 프로그램 보조
-    • 어르신들의 퍼즐 맞추기 활동을 곁에서 보조하며 완성할 수 있도록 응원해 드렸고, 어르신의 속도에 맞추어 기다려 드리는 것이 소통의 기본임을 알게 됨.
+    10:00 ~ 12:00 (오전 프로그램 보조)
+    오전 실버 레크리에이션인 풍선 배구 진행을 보조하였다. 어르신들이 적극적으로 참여하실 수 있도록 박수를 유도하고 호응해 드렸는데, 처음엔 소극적이셨던 몇몇 어르신들도 점차 웃으며 참여하시는 모습을 볼 수 있었다. 이를 통해 여가 프로그램이 단순한 오락을 넘어 어르신들의 정서적 자극과 활력에도 중요한 역할을 한다는 것을 알게 되었다.
 
-    ■ 실습생 총평
-    (오늘 실습 전체를 경험하며 느낀 점과 배운 점을 솔직하게 담은 2~3문장의 총평)
+    실습생의견
+    오늘 가장 인상 깊었던 일은 라운딩 중 어르신과 나눈 대화였다. 짧은 시간이었지만 어르신께서 밝은 표정으로 이야기를 이어가시는 모습을 보며 경청이 가진 힘을 새삼 느낄 수 있었다. 사회복지 실천에서 특별한 개입 없이도 진심으로 들어주는 태도만으로 라포형성이 이루어질 수 있다는 것을 배웠다. 한편으로는 아직 어르신들의 특성을 다 파악하지 못해 아쉬웠으며, 다음 실습에서는 어르신들의 개별 특성을 미리 숙지하여 더 자연스럽게 다가갈 수 있도록 노력해야겠다.
     """
     
     response = model.generate_model_content(prompt) if hasattr(model, 'generate_model_content') else model.generate_content(prompt)
@@ -239,7 +236,7 @@ if st.button("🚀 실습일지 문장 생성하기", type="primary"):
     if not activities_data:
         st.warning("최소 하나 이상의 활동 정보를 입력해 주세요!")
     else:
-        with st.spinner("실습생의 시선으로 정성스럽게 문장을 다듬는 중입니다..."):
+        with st.spinner("작성해주신 양식 스타일에 맞춰 실습일지를 정성껏 완성하는 중입니다..."):
             try:
                 result = generate_log(activities_data)
                 st.success("작성이 완료되었습니다!")
