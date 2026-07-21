@@ -1,6 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 import json
+from streamlit_local_storage import LocalStorage
 
 # 1. 페이지 기본 설정
 st.set_page_config(
@@ -9,6 +10,9 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="collapsed"
 )
+
+# LocalStorage 객체 생성
+local_storage = LocalStorage()
 
 # 커스텀 CSS
 st.markdown("""
@@ -26,7 +30,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📝 실습일지")
-st.caption("시간대별로 작성 후 [💾 임시 저장]을 누르면 앱을 닫아도 내용이 보존됩니다.")
+st.caption("시간대별로 작성 후 [💾 임시 저장]을 누르면 앱을 닫아도 안전하게 유지됩니다.")
 
 # 2. API 키 설정 (Secrets 자동 불러오기)
 api_key = st.secrets.get("GEMINI_API_KEY") or st.sidebar.text_input("Gemini API Key 입력", type="password")
@@ -37,26 +41,25 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 3. 브라우저 LocalStorage 자바스크립트 연동 (닫아도 저장되는 기능)
-st.components.v1.html("""
-<script>
-function saveToLocal() {
-    const data = {};
-    const inputs = window.parent.document.querySelectorAll('input, textarea');
-    inputs.forEach((input, idx) => {
-        if (input.value) data[idx] = input.value;
-    });
-    localStorage.setItem('welfare_log_draft', JSON.stringify(data));
-}
-</script>
-""", height=0)
+# 3. LocalStorage에서 임시 저장된 데이터 복원
+STORAGE_KEY = "welfare_log_draft_data"
 
-# 세션 초기화
-if "draft" not in st.session_state:
-    st.session_state.draft = {}
+if "draft_loaded" not in st.session_state:
+    st.session_state.draft_loaded = False
+    st.session_state.draft_data = {}
+
+# 브라우저 저장소 데이터 불러오기
+if not st.session_state.draft_loaded:
+    saved_json = local_storage.getItem(STORAGE_KEY)
+    if saved_json:
+        try:
+            st.session_state.draft_data = json.loads(saved_json)
+        except Exception:
+            st.session_state.draft_data = {}
+    st.session_state.draft_loaded = True
 
 if "activity_count" not in st.session_state:
-    st.session_state.activity_count = 3
+    st.session_state.activity_count = max(3, len([k for k in st.session_state.draft_data.keys() if k.startswith("name_")]))
 
 time_options = [
     "09:00 ~ 10:00",
@@ -78,19 +81,16 @@ preset_keywords = ["환경정리 및 위생", "인지재활 보조", "식사 수
 st.write("💡 **추천 키워드:** " + ", ".join(preset_keywords))
 st.write("")
 
-# Query Params 및 Session State를 활용한 영구 임시저장 제어
-query_params = st.query_params
-
 activities_data = []
 
 for idx in range(st.session_state.activity_count):
     with st.container():
         st.markdown(f"**활동 {idx + 1}**")
         
-        # 저장된 값 불러오기
-        saved_time = st.session_state.draft.get(f"time_{idx}", time_options[min(idx, len(time_options)-2)])
-        saved_name = st.session_state.draft.get(f"name_{idx}", "")
-        saved_detail = st.session_state.draft.get(f"detail_{idx}", "")
+        # 저장된 값 매핑
+        saved_time = st.session_state.draft_data.get(f"time_{idx}", time_options[min(idx, len(time_options)-2)])
+        saved_name = st.session_state.draft_data.get(f"name_{idx}", "")
+        saved_detail = st.session_state.draft_data.get(f"detail_{idx}", "")
 
         selected_time = st.selectbox(
             f"시간대 선택 #{idx + 1}", 
@@ -107,10 +107,10 @@ for idx in range(st.session_state.activity_count):
         act_name = st.text_input(f"활동명 #{idx + 1}", value=saved_name, key=f"name_{idx}", placeholder="예: 인지재활 프로그램 보조")
         act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=saved_detail, key=f"detail_{idx}", placeholder="예: 어르신 퍼즐 맞추기 보조, 집중력 저하 관찰함", height=70)
         
-        # 입력 상태 동기화
-        st.session_state.draft[f"time_{idx}"] = final_time
-        st.session_state.draft[f"name_{idx}"] = act_name
-        st.session_state.draft[f"detail_{idx}"] = act_detail
+        # 실시간 상태 보존
+        st.session_state.draft_data[f"time_{idx}"] = final_time
+        st.session_state.draft_data[f"name_{idx}"] = act_name
+        st.session_state.draft_data[f"detail_{idx}"] = act_detail
 
         if act_name or act_detail:
             activities_data.append({
@@ -120,7 +120,7 @@ for idx in range(st.session_state.activity_count):
             })
         st.markdown("---")
 
-# 버튼 모음
+# 제어 버튼 모음
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("➕ 칸 추가"):
@@ -128,13 +128,15 @@ with col1:
         st.rerun()
 with col2:
     if st.button("💾 임시 저장"):
-        # 내부에 임시데이터 상태 고정
-        st.toast("현재 입력한 내용이 저장되었습니다. 앱을 닫아도 복원됩니다!", icon="✅")
+        # 브라우저 LocalStorage에 데이터 영구 저장
+        local_storage.setItem(STORAGE_KEY, json.dumps(st.session_state.draft_data))
+        st.toast("스마트폰/PC 브라우저에 안전하게 저장되었습니다!", icon="✅")
 with col3:
     if st.button("🗑️ 전체 비우기"):
-        st.session_state.draft = {}
+        st.session_state.draft_data = {}
         st.session_state.activity_count = 3
-        st.toast("작성 내용이 전체 초기화되었습니다.", icon="🧹")
+        local_storage.deleteItem(STORAGE_KEY)
+        st.toast("임시 저장 내용이 초기화되었습니다.", icon="🧹")
         st.rerun()
 
 # 5. AI 생성 프롬프트
@@ -166,7 +168,7 @@ def generate_log(data):
     response = model.generate_model_content(prompt) if hasattr(model, 'generate_model_content') else model.generate_content(prompt)
     return response.text
 
-# 6. 생성 및 결과 표시
+# 6. 생성 결과 표시
 st.write("")
 if st.button("🚀 실습일지 문장 생성하기", type="primary"):
     if not activities_data:
