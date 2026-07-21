@@ -41,7 +41,7 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 3. LocalStorage 및 리셋 버전을 위한 세션 초기화
+# 3. LocalStorage 및 세션 초기화
 STORAGE_KEY = "welfare_log_draft_data"
 
 if "reset_version" not in st.session_state:
@@ -139,18 +139,18 @@ with col3:
         # 1) 메모리 데이터 비우기
         st.session_state.draft_data = {}
         st.session_state.activity_count = 3
-        
-        # 2) 입력 위젯 리셋을 위해 버전 카운트 변경
         st.session_state.reset_version += 1
         
-        # 3) 브라우저 LocalStorage 삭제
-        try:
-            local_storage.deleteItem(STORAGE_KEY)
-        except Exception:
-            pass
-
-        st.toast("임시 저장 내용이 완전히 비워졌습니다.", icon="🧹")
-        st.rerun()
+        # 2) 브라우저 저장소 데이터 및 로컬스토리지 완전 삭제 자바스크립트 실행
+        st.components.v1.html(
+            f"""
+            <script>
+                window.parent.localStorage.removeItem('{STORAGE_KEY}');
+                window.parent.location.reload();
+            </script>
+            """,
+            height=0
+        )
 
 # 5. AI 생성 프롬프트
 def generate_log(data):
