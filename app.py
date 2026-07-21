@@ -1,247 +1,231 @@
+import json
 import streamlit as st
 import google.generativeai as genai
-import json
 from streamlit_local_storage import LocalStorage
 
-# 1. 페이지 기본 설정
-st.set_page_config(
-    page_title="실습일지",
-    page_icon="📝",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
-
-# LocalStorage 객체 생성
-local_storage = LocalStorage()
-
-# 커스텀 CSS
-st.markdown("""
-    <style>
-    .stButton>button {
-        width: 100%;
-        border-radius: 8px;
-        height: 3em;
-        font-weight: bold;
-    }
-    .stTextArea textarea {
-        font-size: 16px !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
+# -----------------------------------------------------------------------------
+# 1. 페이지 설정 및 초기화
+# -----------------------------------------------------------------------------
+st.set_page_config(page_title="📝 실습일지", layout="wide")
 st.title("📝 실습일지")
-st.caption("키워드를 선택하고 간단히 메모하면 제출용 실습일지 양식으로 완성해 줍니다.")
 
-# 2. API 키 설정 (Secrets 자동 불러오기)
-api_key = st.secrets.get("GEMINI_API_KEY") or st.sidebar.text_input("Gemini API Key 입력", type="password")
+local_store = LocalStorage()
 
-if not api_key:
-    st.info("👈 왼쪽 사이드바에 Gemini API Key를 입력해 주세요.")
-    st.stop()
+# Gemini API 설정 (Streamlit Secrets에서 가져옴)
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=api_key)
+except Exception:
+    st.error("⚠️ GEMINI_API_KEY가 Secrets에 설정되어 있지 않습니다. .streamlit/secrets.toml 파일을 확인해 주세요.")
 
-genai.configure(api_key=api_key)
-
-# 3. LocalStorage 및 세션 초기화
-STORAGE_KEY = "welfare_log_draft_data"
-
-if "reset_version" not in st.session_state:
-    st.session_state.reset_version = 0
-
-if "draft_loaded" not in st.session_state:
-    st.session_state.draft_loaded = False
-    st.session_state.draft_data = {}
-
-# 브라우저 저장소 데이터 불러오기
-if not st.session_state.draft_loaded:
-    saved_json = local_storage.getItem(STORAGE_KEY)
-    if saved_json:
-        try:
-            st.session_state.draft_data = json.loads(saved_json)
-        except Exception:
-            st.session_state.draft_data = {}
-    st.session_state.draft_loaded = True
-
-if "activity_count" not in st.session_state:
-    st.session_state.activity_count = max(3, len([k for k in st.session_state.draft_data.keys() if k.startswith("name_")]))
-
-time_options = [
-    "09:00 ~ 10:00",
-    "10:00 ~ 11:00",
-    "11:00 ~ 12:00",
-    "12:00 ~ 13:00",
-    "13:00 ~ 14:00",
-    "14:00 ~ 15:00",
-    "15:00 ~ 16:00",
-    "16:00 ~ 17:00",
-    "17:00 ~ 18:00",
-    "직접 입력"
+# -----------------------------------------------------------------------------
+# 2. 상비 데이터 및 옵션 정의
+# -----------------------------------------------------------------------------
+# 기본 09:00 ~ 18:00 일과 템플릿
+DEFAULT_SCHEDULES = [
+    {"time": "09:00 ~ 10:00", "act_select": "환경정리 및 위생관리", "act_custom": "", "memo": ""},
+    {"time": "10:00 ~ 11:30", "act_select": "오전 프로그램 보조", "act_custom": "", "memo": ""},
+    {"time": "11:30 ~ 13:00", "act_select": "점심 식사 지원", "act_custom": "", "memo": ""},
+    {"time": "13:00 ~ 14:00", "act_select": "휴게 및 오후 준비", "act_custom": "", "memo": ""},
+    {"time": "14:00 ~ 15:30", "act_select": "라운딩 및 개별 상담·말벗", "act_custom": "", "memo": ""},
+    {"time": "15:30 ~ 16:30", "act_select": "오후 프로그램 / 행정업무", "act_custom": "", "memo": ""},
+    {"time": "16:30 ~ 17:30", "act_select": "저녁 식사 준비 및 마무리", "act_custom": "", "memo": ""},
+    {"time": "17:30 ~ 18:00", "act_select": "일과 정리 및 피드백", "act_custom": "", "memo": ""},
 ]
 
-# 4. 카테고리별 추천 키워드 사전
-KEYWORD_CATEGORIES = {
-    "🧹 환경/위생": [
-        "생활실 청소", "침구 정리", "환기", "소독 및 방역", 
-        "배식 준비", "식당 정리", "물품 정리", "세탁물 정리", "욕실 청결 점검"
-    ],
-    "🤝 일상지원(ADL)": [
-        "식사보조", "배설보조", "이동보조(휠체어)", "세면/목욕 보조", 
-        "옷 갈아입히기 보조", "체위변경 보조", "낙상예방 활동"
-    ],
-    "🎨 여가/프로그램": [
-        "실버 레크리에이션 보조", "인지활동(색칠/퍼즐) 보조", "음악치료 보조", 
-        "원예활동 보조", "미술활동 보조", "체조/운동 보조", "생신잔치/행사 보조"
-    ],
-    "💬 라운딩/정서": [
-        "말벗 활동", "개별 라운딩", "어르신 욕구 파악", "정서적 지지", 
-        "경청", "가족 면회 지원", "임종 돌봄 참관"
-    ],
-    "📖 사정/상담/기록": [
-        "초기면접 참관", "욕구사정 참관", "개별 상담 참관", 
-        "사례관리 회의 참관", "상담일지 작성 보조", "케이스 기록 열람"
-    ],
-    "📑 행정/사무": [
-        "서류 정리", "입소/퇴소 서류 보조", "프로그램 계획서 작성 보조", 
-        "회의록 작성", "통계자료 정리", "각종 신청서 작성 보조"
-    ],
-    "🏫 교육/회의/협력": [
-        "직원회의 참관", "사례회의 참관", "신입 오리엔테이션 참여", 
-        "다학제 회의 참관", "외부 기관 방문/연계"
-    ],
-    "💡 관찰/배운점 용어": [
-        "라포형성", "욕구사정", "자기결정권", "임파워먼트(역량강화)", 
-        "클라이언트 중심 접근", "사례관리", "사회복지실천기술", "비밀보장", 
-        "아웃리치", "다학제 협업", "인권감수성", "옹호(애드보커시)"
-    ]
+ACTIVITY_OPTIONS = [
+    "출근 및 인수인계",
+    "환경정리 및 위생관리",
+    "오전 프로그램 보조",
+    "점심 식사 지원",
+    "휴게 및 오후 준비",
+    "라운딩 및 개별 상담·말벗",
+    "오후 프로그램 / 행정업무",
+    "저녁 식사 준비 및 마무리",
+    "일과 정리 및 피드백",
+    "✏️ 직접 입력"
+]
+
+KEYWORDS_BY_CATEGORY = {
+    "🧹 환경/위생": ["생활실 환기", "침구류 정리", "바닥 청소", "소독 조치", "물품 정돈"],
+    "🍲 ADL 지원": ["식사보조", "저작곤란 관찰", "구강위생 관리", "체위변경", "이동보조"],
+    "🎨 여가/프로그램": ["인지활동(색칠)", "건강체조", "음악치료", "원예활동", "참여 유도"],
+    "💬 라운딩/정서": ["말벗 지원", "정서적 경청", "상태 파악", "표정 및 행동 관찰"],
+    "📋 사정/상담": ["초기면접 참관", "욕구사정 참관", "사례관리 참관", "상담일지 작성"],
+    "📁 행정/교육": ["케이스 기록", "서류 정리", "슈퍼바이저 피드백", "OT 및 시설 교육"]
 }
 
-# 5. 활동 내역 작성 섹션
-st.subheader("⏰ 활동 내역 작성")
+# -----------------------------------------------------------------------------
+# 3. Session State 및 LocalStorage 동기화
+# -----------------------------------------------------------------------------
+if "schedules" not in st.session_state:
+    st.session_state["schedules"] = DEFAULT_SCHEDULES
 
-activities_data = []
-v = st.session_state.reset_version
+if "active_memo_idx" not in st.session_state:
+    st.session_state["active_memo_idx"] = 0
 
-for idx in range(st.session_state.activity_count):
-    with st.container():
-        st.markdown(f"**활동 {idx + 1}**")
+# 복원용 로직
+restored_data = local_store.getItem("my_welfare_log_data")
+if restored_data and "restored_flag" not in st.session_state:
+    try:
+        parsed = json.loads(restored_data)
+        if isinstance(parsed, list) and len(parsed) > 0:
+            st.session_state["schedules"] = parsed
+            st.session_state["restored_flag"] = True
+    except Exception:
+        pass
+
+# -----------------------------------------------------------------------------
+# 4. 상단 컨트롤 버튼 (저장, 비우기, 템플릿 리셋)
+# -----------------------------------------------------------------------------
+st.subheader("⚙️ 일지 설정 및 데이터 관리")
+
+col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1.5])
+
+with col_btn1:
+    if st.button("💾 임시 저장", use_container_width=True):
+        # 현재 화면에 입력된 데이터 추출 및 저장
+        save_list = []
+        for idx in range(len(st.session_state["schedules"])):
+            t_val = st.session_state.get(f"time_{idx}", "09:00 ~ 10:00")
+            sel_val = st.session_state.get(f"act_select_{idx}", "✏️ 직접 입력")
+            cus_val = st.session_state.get(f"act_custom_{idx}", "")
+            mem_val = st.session_state.get(f"memo_{idx}", "")
+            save_list.append({"time": t_val, "act_select": sel_val, "act_custom": cus_val, "memo": mem_val})
         
-        saved_time = st.session_state.draft_data.get(f"time_{idx}", time_options[min(idx, len(time_options)-2)])
-        saved_name = st.session_state.draft_data.get(f"name_{idx}", "")
-        saved_detail = st.session_state.draft_data.get(f"detail_{idx}", "")
+        local_store.setItem("my_welfare_log_data", json.dumps(save_list, ensure_ascii=False))
+        st.toast("브라우저에 데이터가 임시 저장되었습니다!", icon="💾")
 
-        selected_time = st.selectbox(
-            f"시간대 선택 #{idx + 1}", 
-            time_options, 
-            index=time_options.index(saved_time) if saved_time in time_options else len(time_options)-1, 
-            key=f"time_select_{v}_{idx}"
-        )
-        
-        if selected_time == "직접 입력":
-            final_time = st.text_input(f"시간대 직접 입력 #{idx + 1}", value=saved_time if saved_time not in time_options else "", placeholder="예: 09:30 ~ 10:30", key=f"time_custom_{v}_{idx}")
-        else:
-            final_time = selected_time
-
-        act_name = st.text_input(f"활동명 #{idx + 1}", value=saved_name, key=f"name_{v}_{idx}", placeholder="예: 출근 및 청소, 라운딩 및 말벗 등")
-        
-        # 키워드 선택 영역
-        with st.expander(f"💡 활동 #{idx + 1} 추천 키워드 선택해서 메모에 넣기"):
-            selected_cat = st.selectbox(f"카테고리 선택 #{idx+1}", list(KEYWORD_CATEGORIES.keys()), key=f"cat_{v}_{idx}")
-            st.caption("원하는 단어를 클릭하면 아래 메모 칸에 자동으로 추가됩니다:")
-            
-            kw_list = KEYWORD_CATEGORIES[selected_cat]
-            kw_cols = st.columns(3)
-            for k_i, kw in enumerate(kw_list):
-                with kw_cols[k_i % 3]:
-                    if st.button(kw, key=f"kw_btn_{v}_{idx}_{selected_cat}_{k_i}"):
-                        current_val = st.session_state.get(f"detail_{v}_{idx}", saved_detail)
-                        new_val = f"{current_val}, {kw}" if current_val else kw
-                        st.session_state[f"detail_{v}_{idx}"] = new_val
-                        st.rerun()
-
-        act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=saved_detail, key=f"detail_{v}_{idx}", placeholder="특이사항이나 기억나는 어르신 반응, 배운 점을 메모해 보세요.", height=70)
-        
-        st.session_state.draft_data[f"time_{idx}"] = final_time
-        st.session_state.draft_data[f"name_{idx}"] = act_name
-        st.session_state.draft_data[f"detail_{idx}"] = act_detail
-
-        if act_name or act_detail:
-            activities_data.append({
-                "time": final_time,
-                "title": act_name,
-                "memo": act_detail
-            })
-        st.markdown("---")
-
-# 제어 버튼 모음
-col1, col2, col3 = st.columns(3)
-with col1:
-    if st.button("➕ 칸 추가"):
-        st.session_state.activity_count += 1
+with col_btn2:
+    if st.button("🗑️ 전체 비우기", use_container_width=True):
+        local_store.removeItem("my_welfare_log_data")
+        st.session_state["schedules"] = DEFAULT_SCHEDULES
+        st.session_state.pop("restored_flag", None)
+        st.toast("저장된 데이터가 비워졌습니다.", icon="🗑️")
         st.rerun()
-with col2:
-    if st.button("💾 임시 저장"):
-        local_storage.setItem(STORAGE_KEY, json.dumps(st.session_state.draft_data))
-        st.toast("스마트폰/PC 브라우저에 안전하게 저장되었습니다!", icon="✅")
-with col3:
-    if st.button("🗑️ 전체 비우기"):
-        st.session_state.draft_data = {}
-        st.session_state.activity_count = 3
-        st.session_state.reset_version += 1
+
+with col_btn3:
+    if st.button("🔄 기본 09:00~18:00 일과 불러오기", use_container_width=True):
+        st.session_state["schedules"] = DEFAULT_SCHEDULES
+        st.rerun()
+
+st.markdown("---")
+
+# -----------------------------------------------------------------------------
+# 5. 시간대별 활동 및 관찰 메모 입력 폼
+# -----------------------------------------------------------------------------
+st.subheader("⏰ 시간대별 일과 및 메모 입력")
+
+current_schedules = st.session_state["schedules"]
+updated_schedules = []
+
+for idx, item in enumerate(current_schedules):
+    with st.expander(f"📍 [{item.get('time', '시간 미정')}] {item.get('act_select', '')}", expanded=True):
+        c1, c2, c3, c4 = st.columns([2, 2.5, 4.5, 1])
         
-        st.components.v1.html(
-            f"""
-            <script>
-                window.parent.localStorage.removeItem('{STORAGE_KEY}');
-                window.parent.location.reload();
-            </script>
-            """,
-            height=0
-        )
+        with c1:
+            time_val = st.text_input("시간대", value=item.get("time", ""), key=f"time_{idx}")
+        
+        with c2:
+            current_act = item.get("act_select", "✏️ 직접 입력")
+            act_idx = ACTIVITY_OPTIONS.index(current_act) if current_act in ACTIVITY_OPTIONS else 9
+            
+            act_select_val = st.selectbox("활동명 선택", options=ACTIVITY_OPTIONS, index=act_idx, key=f"act_select_{idx}")
+            
+            act_custom_val = ""
+            if act_select_val == "✏️ 직접 입력":
+                act_custom_val = st.text_input("활동명 직접 입력", value=item.get("act_custom", ""), key=f"act_custom_{idx}")
+        
+        with c3:
+            memo_val = st.text_area(f"관찰 및 수행 메모", value=item.get("memo", ""), height=80, key=f"memo_{idx}")
+            if st.button(f"📌 이 위치에 키워드 삽입 지정", key=f"focus_{idx}"):
+                st.session_state["active_memo_idx"] = idx
+                st.toast(f"#{idx+1}번 메모 입력창이 키워드 삽입 대상으로 지정되었습니다.")
+        
+        with c4:
+            st.write("")
+            st.write("")
+            if st.button("❌ 삭제", key=f"del_{idx}"):
+                st.session_state["schedules"].pop(idx)
+                st.rerun()
+        
+        updated_schedules.append({
+            "time": time_val,
+            "act_select": act_select_val,
+            "act_custom": act_custom_val,
+            "memo": memo_val
+        })
 
-# 6. AI 생성 프롬프트 (사용자 예시 양식 완벽 반영)
-def generate_log(data):
-    model = genai.GenerativeModel('gemini-2.5-flash')
+if st.button("➕ 시간대 추가", use_container_width=True):
+    st.session_state["schedules"].append({"time": "18:00 ~ 19:00", "act_select": "✏️ 직접 입력", "act_custom": "", "memo": ""})
+    st.rerun()
+
+st.markdown("---")
+
+# -----------------------------------------------------------------------------
+# 6. 추천 키워드 자동 삽입 영역
+# -----------------------------------------------------------------------------
+st.subheader("💡 카테고리별 추천 키워드 (클릭 시 선택된 메모에 자동 입력)")
+st.caption(f"현재 키워드가 입력될 대상: **#{st.session_state['active_memo_idx'] + 1}번 시간대 메모창**")
+
+for cat_name, kw_list in KEYWORDS_BY_CATEGORY.items():
+    st.write(f"**{cat_name}**")
+    cols = st.columns(len(kw_list))
+    for i, kw in enumerate(kw_list):
+        with cols[i]:
+            if st.button(kw, key=f"kw_{cat_name}_{i}"):
+                target_idx = st.session_state["active_memo_idx"]
+                current_text = st.session_state.get(f"memo_{target_idx}", "")
+                new_text = f"{current_text}, {kw}" if current_text else kw
+                st.session_state[f"memo_{target_idx}"] = new_text
+                st.session_state["schedules"][target_idx]["memo"] = new_text
+                st.rerun()
+
+st.markdown("---")
+
+# -----------------------------------------------------------------------------
+# 7. AI 실습일지 생성 영역
+# -----------------------------------------------------------------------------
+st.subheader("🤖 Gemini AI 실습일지 생성")
+
+if st.button("🚀 실습일지 작성 시작", type="primary", use_container_width=True):
+    # 입력 데이터 통합 정리
+    prompt_context = []
+    for idx, item in enumerate(updated_schedules):
+        final_act = item["act_custom"] if item["act_select"] == "✏️ 직접 입력" else item["act_select"]
+        prompt_context.append(f"- 시간대: {item['time']} | 활동명: {final_act} | 관찰/수행 내용: {item['memo']}")
     
-    prompt = f"""
-    당신은 노인복지시설(요양원)에서 현장실습을 하는 사회복지 전공 실습생입니다.
-    아래 [입력 데이터]를 바탕으로 예시 양식과 완전히 동일한 스타일로 실습일지를 완성해 주세요.
-
-    [작성 양식 및 규칙 - 필수 준수]
-    1. 제목 구성: "시간대 (활동명)" 형태로 서두를 시작하세요. (예: 09:00 ~ 10:00 (출근 및 청소))
-    2. 본문 문단 구성: 각 시간대별로 [내가 직접 한 일/목적 ➔ 현장 관찰 사항 및 어르신 반응 ➔ 실습생으로서 느낀 점 및 배운 점]을 자연스럽게 2~3문장의 하나의 문단으로 작성하세요.
-    3. 어조: 너무 딱딱하거나 연구원 같은 문체 대신, 현장에서 배우며 성찰하는 솔직하고 진정성 있는 '실습생 어조'(~하였다, ~를 알게 되었다, ~를 배웠다)를 유지하세요.
-    4. 실습생의견: 입력된 당일 전체 활동을 종합하여 [오늘 가장 인상 깊었던 일 ➔ 이를 통해 깨달은 사회복지 실천 배움 ➔ 아쉬웠던 점 및 다음 실습에서의 다짐]이 포함된 1개의 정성스러운 문단으로 작성하세요.
-
-    [입력 데이터]
-    {data}
-
-    [출력 양식 예시 - 아래 양식 그대로 출력할 것]
-    활동 내용 및 방법
-
-    09:00 ~ 10:00 (출근 및 청소)
-    출근 후 어르신들의 생활실을 청소하고 환기를 진행하였다. 침구와 바닥을 정리하며 위생 관리에 신경 썼는데, 특히 감염 예방과 쾌적한 생활환경 조성을 위해 청결 유지가 중요하다는 점을 염두에 두고 작업하였다. 이를 통해 단순한 청소 업무도 어르신의 건강과 직결되는 사회복지사의 중요한 역할임을 알게 되었다.
-
-    10:00 ~ 12:00 (오전 프로그램 보조)
-    오전 실버 레크리에이션인 풍선 배구 진행을 보조하였다. 어르신들이 적극적으로 참여하실 수 있도록 박수를 유도하고 호응해 드렸는데, 처음엔 소극적이셨던 몇몇 어르신들도 점차 웃으며 참여하시는 모습을 볼 수 있었다. 이를 통해 여가 프로그램이 단순한 오락을 넘어 어르신들의 정서적 자극과 활력에도 중요한 역할을 한다는 것을 알게 되었다.
-
-    실습생의견
-    오늘 가장 인상 깊었던 일은 라운딩 중 어르신과 나눈 대화였다. 짧은 시간이었지만 어르신께서 밝은 표정으로 이야기를 이어가시는 모습을 보며 경청이 가진 힘을 새삼 느낄 수 있었다. 사회복지 실천에서 특별한 개입 없이도 진심으로 들어주는 태도만으로 라포형성이 이루어질 수 있다는 것을 배웠다. 한편으로는 아직 어르신들의 특성을 다 파악하지 못해 아쉬웠으며, 다음 실습에서는 어르신들의 개별 특성을 미리 숙지하여 더 자연스럽게 다가갈 수 있도록 노력해야겠다.
-    """
+    full_schedule_str = "\n".join(prompt_context)
     
-    response = model.generate_model_content(prompt) if hasattr(model, 'generate_model_content') else model.generate_content(prompt)
-    return response.text
+    system_prompt = f"""
+당신은 요양원에서 사회복지 실습을 진행 중인 진정성 있고 솔직한 실습생입니다.
+아래 제공된 시간대별 일과 및 메모를 바탕으로 정교한 '사회복지 실습일지'를 작성해 주세요.
 
-# 7. 생성 결과 표시
-st.write("")
-if st.button("🚀 실습일지 문장 생성하기", type="primary"):
-    if not activities_data:
-        st.warning("최소 하나 이상의 활동 정보를 입력해 주세요!")
-    else:
-        with st.spinner("작성해주신 양식 스타일에 맞춰 실습일지를 정성껏 완성하는 중입니다..."):
-            try:
-                result = generate_log(activities_data)
-                st.success("작성이 완료되었습니다!")
-                st.subheader("📄 생성 결과")
-                st.code(result, language=None)
-                
-            except Exception as e:
-                st.error(f"오류가 발생했습니다: {e}")
+[실습 내용]
+{full_schedule_str}
+
+[작성 지침 및 양식 요구사항]
+1. 각 시간대 항목마다 반드시 아래의 3문단 구조로 상세히 작성할 것:
+   - 시간대 및 활동명 (예: 09:00 ~ 10:00 (환경정리 및 위생관리))
+   - [내가 한 일]: 내가 수행한 주요 보조 업무나 작업 내용
+   - [관찰 사항]: 어르신들의 반응, 상태변화, 요양보호사/사회복지사 선생님들의 케어 방식
+   - [느낀 점/배운 점]: 실습생으로서 깨달은 점, 사회복지적 의미, 배운 점
+2. 어조: 솔직하고 진정성 있는 실습생 어조 (~하였다, ~를 알게 되었다, ~라 느꼈다).
+3. 일지 가장 마지막 부분에는 반드시 [실습생의견 (총평)] 섹션을 추가하고 아래 3가지 내용을 포함할 것:
+   - 오늘 가장 인상 깊었던 일
+   - 깨달은 점
+   - 아쉬운 점 및 다음 실습에서의 다짐
+"""
+
+    with st.spinner("AI가 실습일지를 다듬어 작성하고 있습니다..."):
+        try:
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            response = model.generate_content(system_prompt)
+            
+            st.success("✨ 실습일지가 생성되었습니다!")
+            st.markdown("### 📝 생성된 실습일지")
+            st.text_area("결과 복사용", value=response.text, height=500)
+            st.markdown(response.text)
+            
+        except Exception as e:
+            st.error(f"일지 생성 중 오류가 발생했습니다: {str(e)}")
