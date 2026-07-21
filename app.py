@@ -26,21 +26,11 @@ st.markdown("""
     .stTextArea textarea {
         font-size: 16px !important;
     }
-    .keyword-badge {
-        display: inline-block;
-        background-color: #e1f5fe;
-        color: #0288d1;
-        padding: 4px 8px;
-        border-radius: 12px;
-        font-size: 12px;
-        margin-right: 4px;
-        margin-bottom: 4px;
-    }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("📝 실습일지")
-st.caption("키워드 버튼을 눌러 메모를 채우고 [💾 임시 저장]을 활용해 보세요.")
+st.caption("다양한 키워드 버튼을 눌러 20일간 다채로운 실습일지를 작성해 보세요.")
 
 # 2. API 키 설정 (Secrets 자동 불러오기)
 api_key = st.secrets.get("GEMINI_API_KEY") or st.sidebar.text_input("Gemini API Key 입력", type="password")
@@ -87,14 +77,41 @@ time_options = [
     "직접 입력"
 ]
 
-# 4. 카테고리별 추천 키워드 데이터 사전
+# 4. 카테고리별 전체 키워드 데이터 사전 (제시해주신 키워드 전체 세분화 반영)
 KEYWORD_CATEGORIES = {
-    "🧹 환경/위생": ["생활실 청소", "침구 정리", "환기 및 소독", "배식 준비", "식당 정리", "물품/세탁물 정리"],
-    "🤝 일상지원": ["식사보조", "배설보조", "이동보조(휠체어)", "세면/목욕 보조", "체위변경", "낙상예방"],
-    "🎨 여가/프로그램": ["실버 레크리에이션", "인지활동(색칠/퍼즐)", "음악치료", "원예/미술활동", "체조/운동"],
-    "💬 라운딩/정서": ["말벗 활동", "개별 라운딩", "어르신 욕구 파악", "정서적 지지", "가족 면회 지원"],
-    "📖 사정/행정": ["초기면접 참관", "욕구사정 참관", "상담일지 작성", "사례회의 참관", "서류 정리"],
-    "💡 관찰/전문용어": ["라포형성", "자기결정권 존중", "잔존능력 유지", "임파워먼트", "클라이언트 중심", "인권감수성"]
+    "🧹 환경/위생": [
+        "생활실 청소", "침구 정리", "환기", "소독 및 방역", 
+        "배식 준비", "식당 정리", "물품 정리", "세탁물 정리", "욕실 청결 점검"
+    ],
+    "🤝 일상지원(ADL)": [
+        "식사보조", "배설보조", "이동보조(휠체어)", "세면/목욕 보조", 
+        "옷 갈아입히기 보조", "체위변경 보조", "낙상예방 활동"
+    ],
+    "🎨 여가/프로그램": [
+        "실버 레크리에이션 보조", "인지활동(색칠/퍼즐) 보조", "음악치료 보조", 
+        "원예활동 보조", "미술활동 보조", "체조/운동 보조", "생신잔치/행사 보조"
+    ],
+    "💬 라운딩/정서": [
+        "말벗 활동", "개별 라운딩", "어르신 욕구 파악", "정서적 지지", 
+        "경청", "가족 면회 지원", "임종 돌봄 참관"
+    ],
+    "📖 사정/상담/기록": [
+        "초기면접 참관", "욕구사정 참관", "개별 상담 참관", 
+        "사례관리 회의 참관", "상담일지 작성 보조", "케이스 기록 열람"
+    ],
+    "📑 행정/사무": [
+        "서류 정리", "입소/퇴소 서류 보조", "프로그램 계획서 작성 보조", 
+        "회의록 작성", "통계자료 정리", "각종 신청서 작성 보조"
+    ],
+    "🏫 교육/회의/협력": [
+        "직원회의 참관", "사례회의 참관", "신입 오리엔테이션 참여", 
+        "다학제 회의 참관", "외부 기관 방문/연계"
+    ],
+    "💡 관찰/배운점 용어": [
+        "라포형성", "욕구사정", "자기결정권", "임파워먼트(역량강화)", 
+        "클라이언트 중심 접근", "사례관리", "사회복지실천기술", "비밀보장", 
+        "아웃리치", "다학제 협업", "인권감수성", "옹호(애드보커시)"
+    ]
 }
 
 # 5. 활동 내역 작성 섹션
@@ -125,14 +142,15 @@ for idx in range(st.session_state.activity_count):
 
         act_name = st.text_input(f"활동명 #{idx + 1}", value=saved_name, key=f"name_{v}_{idx}", placeholder="예: 인지재활 프로그램 보조")
         
-        # --- 키워드 버튼 클릭 시 메모에 추가되는 익스팬더 ---
-        with st.expander(f"💡 활동 #{idx + 1} 키워드 클릭해서 메모에 넣기"):
-            selected_cat = st.radio(f"카테고리 선택 #{idx+1}", list(KEYWORD_CATEGORIES.keys()), horizontal=True, key=f"cat_{v}_{idx}")
-            st.caption("원하는 단어를 누르면 아래 메모 칸에 자동으로 추가됩니다:")
+        # --- 키워드 선택 영역 ---
+        with st.expander(f"💡 활동 #{idx + 1} 추천 키워드 선택해서 메모에 넣기"):
+            selected_cat = st.selectbox(f"카테고리 선택 #{idx+1}", list(KEYWORD_CATEGORIES.keys()), key=f"cat_{v}_{idx}")
+            st.caption("원하는 단어를 클릭하면 아래 메모 칸에 자동으로 추가됩니다:")
             
-            # 버튼들을 가로로 나열
+            # 버튼들을 3열로 배치
+            kw_list = KEYWORD_CATEGORIES[selected_cat]
             kw_cols = st.columns(3)
-            for k_i, kw in enumerate(KEYWORD_CATEGORIES[selected_cat]):
+            for k_i, kw in enumerate(kw_list):
                 with kw_cols[k_i % 3]:
                     if st.button(kw, key=f"kw_btn_{v}_{idx}_{selected_cat}_{k_i}"):
                         current_val = st.session_state.get(f"detail_{v}_{idx}", saved_detail)
@@ -140,7 +158,7 @@ for idx in range(st.session_state.activity_count):
                         st.session_state[f"detail_{v}_{idx}"] = new_val
                         st.rerun()
 
-        act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=saved_detail, key=f"detail_{v}_{idx}", placeholder="위 키워드 버튼을 누르거나 직접 메모를 적으세요.", height=70)
+        act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=saved_detail, key=f"detail_{v}_{idx}", placeholder="위 키워드 버튼을 누르거나 생각나는 내용을 자유롭게 적으세요.", height=70)
         
         # 실시간 상태 보존
         st.session_state.draft_data[f"time_{idx}"] = final_time
@@ -174,26 +192,27 @@ with col3:
         st.components.v1.html(
             f"""
             <script>
-                window.parent.localStorage.removeItem('{STORAGE_KEY}');
+                window.parent.localStorage realm.removeItem('{STORAGE_KEY}');
                 window.parent.location.reload();
             </script>
             """,
             height=0
         )
 
-# 6. AI 생성 프롬프트 (키워드를 학술적·실천적 사회복지 용어로 다듬는 지침 강화)
+# 6. AI 생성 프롬프트 (실습생다운 솔직하고 자연스러운 톤앤매너로 교정)
 def generate_log(data):
     model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = f"""
-    당신은 노인복지시설(요양원) 사회복지 현장실습일지를 작성하는 전문 에이전트입니다.
-    입력된 데이터(시간대, 활동명, 메모/키워드)를 바탕으로 각 시간대별 [활동 내용 및 방법]을 고급스러운 사회복지 전문 문장으로 작성해 주세요.
+    당신은 노인복지시설(요양원)에서 현장실습을 하고 있는 '사회복지 전공 실습생'입니다.
+    입력된 데이터(시간대, 활동명, 메모/키워드)를 바탕으로 각 시간대별 [활동 내용 및 방법]을 솔직하고 정성스러운 실습생 어조로 작성해 주세요.
 
-    [작성 규칙 - 필수 준수]
-    1. 메모에 단어나 키워드(예: 식사보조, 라포형성, 자기결정권)만 나열되어 있더라도, 이를 매끄럽고 전문적인 '사회복지실천 문장'으로 발전시키세요.
-    2. 각 시간대마다 '활동한 내용', '관찰한 사항', '배운 점(전문용어 포함)'이 완벽히 어우러진 **단 한 문장**으로만 작성하세요.
-    3. 불릿(•)이나 항목을 나누지 말고, '~(하)였으며, ~를 관찰하였고, ~를 배움.' 형태로 하나의 매끄러운 문장으로 구성하세요.
-    4. 문장 끝은 개조식인 '~함', '~를 배움' 등으로 매끄럽게 마무리하세요.
+    [작성 어조 및 톤앤매너 - 필수 준수]
+    1. 너무 학술적이거나 거창한 전문가(연구원/시설장) 어조를 피하고, **현장에서 직접 배우고 깨닫는 실습생의 솔직한 시선**으로 작성하세요.
+    2. 전문용어(예: 자기결정권, 라포형성 등)는 한 문장에 과도하게 남발하지 말고, **자연스럽게 1개 정도만 녹여내어** 실습생다운 진정성을 살리세요.
+    3. 각 시간대마다 '내가 직접 수행한 일', '어르신이나 현장을 관찰한 점', '이를 통해 배운 솔직한 점'이 매끄럽게 어우러진 **단 한 문장**으로 작성하세요.
+    4. 불릿(•)이나 항목을 나누지 말고, '~(하)였으며, ~를 관찰하였고, ~를 배움.' 형태로 하나의 매끄러운 문장으로 구성하세요.
+    5. 문장 끝은 개조식인 '~함', '~를 배움', '~를 알게 됨' 등으로 자연스럽게 마무리하세요.
 
     [입력 데이터]
     {data}
@@ -202,10 +221,13 @@ def generate_log(data):
     ■ 활동 내용 및 방법
 
     [09:00 ~ 10:00] 센터위생 및 환경정리
-    • 출근 후 환경 정돈과 아침 회의에 참여하여 당일 일정과 전체 업무 흐름을 공유받았으며, 이를 통해 체계적인 일과 준비가 어르신들의 쾌적한 일상에 미치는 중요성을 배움.
+    • 아침 출근 후 생활실 환기와 소독을 도우며 하루 일과를 준비하였고, 쾌적한 환경 조성이 어르신들의 건강과 직결된다는 점을 배움.
+
+    [10:00 ~ 11:00] 인지재활 프로그램 보조
+    • 어르신들의 퍼즐 맞추기 활동을 곁에서 보조하며 완성할 수 있도록 응원해 드렸고, 어르신의 속도에 맞추어 기다려 드리는 것이 소통의 기본임을 알게 됨.
 
     ■ 실습생 총평
-    (오늘 실습 전체를 종합하는 2~3문장의 소감)
+    (오늘 실습 전체를 경험하며 느낀 점과 배운 점을 솔직하게 담은 2~3문장의 총평)
     """
     
     response = model.generate_model_content(prompt) if hasattr(model, 'generate_model_content') else model.generate_content(prompt)
@@ -217,7 +239,7 @@ if st.button("🚀 실습일지 문장 생성하기", type="primary"):
     if not activities_data:
         st.warning("최소 하나 이상의 활동 정보를 입력해 주세요!")
     else:
-        with st.spinner("선택하신 키워드를 활용하여 전문 사회복지 실습문장을 다듬는 중입니다..."):
+        with st.spinner("실습생의 시선으로 정성스럽게 문장을 다듬는 중입니다..."):
             try:
                 result = generate_log(activities_data)
                 st.success("작성이 완료되었습니다!")
