@@ -135,7 +135,10 @@ with col3:
     if st.button("🗑️ 전체 비우기"):
         st.session_state.draft_data = {}
         st.session_state.activity_count = 3
-        local_storage.deleteItem(STORAGE_KEY)
+        try:
+            local_storage.deleteItem(STORAGE_KEY)
+        except Exception:
+            pass  # 이미 삭제되었거나 없어도 에러 없이 무시하고 진행
         st.toast("임시 저장 내용이 초기화되었습니다.", icon="🧹")
         st.rerun()
 
