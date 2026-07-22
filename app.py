@@ -1,6 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 import json
+import re
 from streamlit_local_storage import LocalStorage
 
 # 1. 페이지 기본 설정
@@ -30,7 +31,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📝 실습일지")
-st.caption("키워드를 선택하고 간단히 메모하면 제출용 실습일지 양식으로 완성해 줍니다.")
+st.caption("각 활동을 클릭하여 작성하세요. 시간을 변경하면 다음 활동 시간이 자동으로 연결됩니다.")
 
 # 2. API 키 설정 (Secrets 자동 불러오기)
 api_key = st.secrets.get("GEMINI_API_KEY") or st.sidebar.text_input("Gemini API Key 입력", type="password")
@@ -64,18 +65,20 @@ if not st.session_state.draft_loaded:
 if "activity_count" not in st.session_state:
     st.session_state.activity_count = max(3, len([k for k in st.session_state.draft_data.keys() if k.startswith("name_")]))
 
-time_options = [
-    "09:00 ~ 10:00",
-    "10:00 ~ 11:00",
-    "11:00 ~ 12:00",
-    "12:00 ~ 13:00",
-    "13:00 ~ 14:00",
-    "14:00 ~ 15:00",
-    "15:00 ~ 16:00",
-    "16:00 ~ 17:00",
-    "17:00 ~ 18:00",
-    "직접 입력"
-]
+# 시간 자동 파싱 함수 (이전 활동의 종료 시간을 파악해 다음 시작시간+1시간 자동 생성)
+def get_next_time_range(prev_time_str):
+    try:
+        # 시간 문자열에서 HH:MM 패턴 추출
+        times = re.findall(r'\d{1,2}:\d{2}', prev_time_str)
+        if len(times) >= 2:
+            end_time = times[1]
+            h, m = map(int, end_time.split(':'))
+            next_h = (h + 1) % 24
+            next_end_str = f"{next_h:02d}:{m:02d}"
+            return f"{end_time} ~ {next_end_str}"
+    except Exception:
+        pass
+    return "10:00 ~ 11:00"
 
 # 4. 카테고리별 추천 키워드 사전
 KEYWORD_CATEGORIES = {
@@ -114,38 +117,55 @@ KEYWORD_CATEGORIES = {
     ]
 }
 
+# 기본 시간 계산 가이드
+default_time_slots = ["09:00 ~ 10:00", "10:00 ~ 11:00", "11:00 ~ 12:00", "13:00 ~ 14:00", "14:00 ~ 15:00", "15:00 ~ 16:00", "16:00 ~ 17:00", "17:00 ~ 18:00"]
+
 # 5. 활동 내역 작성 섹션
 st.subheader("⏰ 활동 내역 작성")
 
 activities_data = []
 v = st.session_state.reset_version
+last_calculated_time = ""
 
 for idx in range(st.session_state.activity_count):
-    with st.container():
-        st.markdown(f"**활동 {idx + 1}**")
+    # 저장된 값 불러오기
+    saved_name = st.session_state.draft_data.get(f"name_{idx}", "")
+    saved_detail = st.session_state.draft_data.get(f"detail_{idx}", "")
+    
+    # 시간 자동 연동 처리
+    if idx == 0:
+        default_t = default_time_slots[0]
+    else:
+        default_t = get_next_time_range(last_calculated_time) if last_calculated_time else default_time_slots[min(idx, len(default_time_slots)-1)]
         
-        saved_time = st.session_state.draft_data.get(f"time_{idx}", time_options[min(idx, len(time_options)-2)])
-        saved_name = st.session_state.draft_data.get(f"name_{idx}", "")
-        saved_detail = st.session_state.draft_data.get(f"detail_{idx}", "")
+    saved_time = st.session_state.draft_data.get(f"time_{idx}", default_t)
 
-        selected_time = st.selectbox(
-            f"시간대 선택 #{idx + 1}", 
-            time_options, 
-            index=time_options.index(saved_time) if saved_time in time_options else len(time_options)-1, 
-            key=f"time_select_{v}_{idx}"
+    # 상태 아이콘 및 레이블 설정
+    if saved_name or saved_detail:
+        status_label = f"✅ 활동 {idx + 1} ({saved_time}) - [{saved_name if saved_name else '메모 작성됨'}]"
+    else:
+        status_label = f"⚪ 활동 {idx + 1} ({saved_time}) - [미작성]"
+
+    # 접고 펼치는 아코디언 컴포넌트
+    with st.expander(status_label, expanded=False):
+        final_time = st.text_input(
+            f"시간대 (수정 가능) #{idx + 1}", 
+            value=saved_time, 
+            key=f"time_custom_{v}_{idx}"
+        )
+        last_calculated_time = final_time  # 다음 활동의 자동 시간 계산을 위해 갱신
+
+        act_name = st.text_input(
+            f"활동명 #{idx + 1}", 
+            value=saved_name, 
+            key=f"name_{v}_{idx}", 
+            placeholder="예: 출근 및 청소, 라운딩 및 말벗 등"
         )
         
-        if selected_time == "직접 입력":
-            final_time = st.text_input(f"시간대 직접 입력 #{idx + 1}", value=saved_time if saved_time not in time_options else "", placeholder="예: 09:30 ~ 10:30", key=f"time_custom_{v}_{idx}")
-        else:
-            final_time = selected_time
-
-        act_name = st.text_input(f"활동명 #{idx + 1}", value=saved_name, key=f"name_{v}_{idx}", placeholder="예: 출근 및 청소, 라운딩 및 말벗 등")
-        
         # 키워드 선택 영역
-        with st.expander(f"💡 활동 #{idx + 1} 추천 키워드 선택해서 메모에 넣기"):
+        with st.container():
+            st.caption("💡 추천 키워드 눌러서 메모에 넣기")
             selected_cat = st.selectbox(f"카테고리 선택 #{idx+1}", list(KEYWORD_CATEGORIES.keys()), key=f"cat_{v}_{idx}")
-            st.caption("원하는 단어를 클릭하면 아래 메모 칸에 자동으로 추가됩니다:")
             
             kw_list = KEYWORD_CATEGORIES[selected_cat]
             kw_cols = st.columns(3)
@@ -157,8 +177,15 @@ for idx in range(st.session_state.activity_count):
                         st.session_state[f"detail_{v}_{idx}"] = new_val
                         st.rerun()
 
-        act_detail = st.text_area(f"간단한 내용 메모 #{idx + 1}", value=saved_detail, key=f"detail_{v}_{idx}", placeholder="특이사항이나 기억나는 어르신 반응, 배운 점을 메모해 보세요.", height=70)
+        act_detail = st.text_area(
+            f"간단한 내용 메모 #{idx + 1}", 
+            value=saved_detail, 
+            key=f"detail_{v}_{idx}", 
+            placeholder="특이사항이나 기억나는 어르신 반응, 배운 점을 메모해 보세요.", 
+            height=70
+        )
         
+        # 데이터 동기화
         st.session_state.draft_data[f"time_{idx}"] = final_time
         st.session_state.draft_data[f"name_{idx}"] = act_name
         st.session_state.draft_data[f"detail_{idx}"] = act_detail
@@ -169,7 +196,6 @@ for idx in range(st.session_state.activity_count):
                 "title": act_name,
                 "memo": act_detail
             })
-        st.markdown("---")
 
 # 제어 버튼 모음
 col1, col2, col3 = st.columns(3)
@@ -197,7 +223,7 @@ with col3:
             height=0
         )
 
-# 6. AI 생성 프롬프트 (사용자 예시 양식 완벽 반영)
+# 6. AI 생성 프롬프트
 def generate_log(data):
     model = genai.GenerativeModel('gemini-2.5-flash')
     
