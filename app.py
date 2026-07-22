@@ -15,22 +15,35 @@ st.set_page_config(
 # LocalStorage 객체 생성
 local_storage = LocalStorage()
 
-# 커스텀 CSS (모바일 버튼 간격 및 텍스트 크기 최적화)
+# 커스텀 CSS (모바일 반응형 강제 가로 정렬 CSS 적용)
 st.markdown("""
     <style>
-    .stButton>button {
-        width: 100%;
-        border-radius: 8px;
-        height: 2.8em;
-        font-weight: bold;
-        padding: 0px 4px !important;
-        font-size: 13px !important;
-    }
-    .stTextArea textarea {
-        font-size: 16px !important;
+    /* 모바일 반응형: columns가 아래로 떨어지지 않고 가로 정렬 유지 */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 4px !important;
     }
     div[data-testid="column"] {
+        width: 100% !important;
+        min-width: 0px !important;
+        padding: 0px 1px !important;
+    }
+    /* 모바일 맞춤 버튼 디자인 */
+    .stButton>button {
+        width: 100% !important;
+        border-radius: 6px !important;
+        height: 2.6em !important;
+        font-weight: bold !important;
         padding: 0px 2px !important;
+        font-size: 11px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+    .stTextArea textarea {
+        font-size: 15px !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -161,17 +174,17 @@ for idx in range(st.session_state.activity_count):
             placeholder="예: 출근 및 청소, 라운딩 및 말벗 등"
         )
         
-        # --- 추천 키워드 영역 (4열 가로 배치) ---
+        # --- 추천 키워드 영역 (모바일 반응형 가로 3열 배치) ---
         with st.container():
-            st.caption("💡 추천 키워드 누르면 메모에 자동 입력 (가로 4열 배치)")
+            st.caption("💡 추천 키워드 누르면 메모에 자동 입력")
             selected_cat = st.selectbox(f"카테고리 선택 #{idx+1}", list(KEYWORD_CATEGORIES.keys()), key=f"cat_{v}_{idx}")
             
             kw_list = KEYWORD_CATEGORIES[selected_cat]
             
-            # 4열 컬럼 생성하여 4개씩 옆으로 배치
-            kw_cols = st.columns(4)
+            # 모바일 화면 크기를 고려하여 3열로 최적화 배치
+            kw_cols = st.columns(3)
             for k_i, kw in enumerate(kw_list):
-                with kw_cols[k_i % 4]:
+                with kw_cols[k_i % 3]:
                     if st.button(kw, key=f"kw_btn_{v}_{idx}_{selected_cat}_{k_i}"):
                         current_val = st.session_state.get(f"detail_{v}_{idx}", saved_detail)
                         new_val = f"{current_val}, {kw}" if current_val else kw
@@ -197,7 +210,7 @@ for idx in range(st.session_state.activity_count):
                 "memo": act_detail
             })
 
-# 제어 버튼 모음 (가로 3열 옆으로 배치)
+# 제어 버튼 모음 (모바일 강제 가로 3열 배치)
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("➕ 칸 추가"):
