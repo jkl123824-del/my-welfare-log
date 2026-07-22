@@ -15,42 +15,39 @@ st.set_page_config(
 # LocalStorage 객체 생성
 local_storage = LocalStorage()
 
-# 커스텀 CSS (모바일 자동 줄바꿈 & 화면 잘림 완전 방지)
+# 커스텀 CSS (모바일 가로 칩/태그 배치용 스타일)
 st.markdown("""
     <style>
-    /* 전체 여백 조절 */
+    /* 스마트폰 여백 최소화 */
     .main .block-container {
-        padding-left: 0.8rem !important;
-        padding-right: 0.8rem !important;
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
         max-width: 100% !important;
     }
     
-    /* 모바일 맞춤 버튼 디자인 */
-    .stButton>button {
-        width: 100% !important;
-        border-radius: 6px !important;
-        min-height: 2.5em !important;
-        height: auto !important;
-        font-weight: bold !important;
-        padding: 4px 6px !important;
-        font-size: 13px !important;
-        white-space: normal !important;
-        word-break: keep-all !important;
-        line-height: 1.2 !important;
+    /* 모바일용 키워드 태그 컨테이너 */
+    .keyword-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+        margin-bottom: 12px;
     }
     
-    /* 입력창 글자 크기 모바일 최적화 */
+    /* 입력창 및 기본 스타일 */
     .stTextArea textarea {
         font-size: 15px !important;
     }
     
-    /* HTML 커스텀 버튼 컨테이너 (자동 줄바꿈 플렉스박스) */
-    .kw-container {
+    /* 하단 제어 버튼 가로 배치 */
+    .control-btn-container {
         display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-top: 5px;
-        margin-bottom: 10px;
+        gap: 4px;
+        width: 100%;
+        margin-top: 10px;
+    }
+    .control-btn-container > div {
+        flex: 1;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -181,29 +178,33 @@ for idx in range(st.session_state.activity_count):
             placeholder="예: 출근 및 청소, 라운딩 및 말벗 등"
         )
         
-        # --- 추천 키워드 영역 (스마트폰 크기에 맞춰 자동 줄바꿈) ---
-        with st.container():
-            st.caption("💡 추천 키워드 누르면 메모에 자동 입력")
-            selected_cat = st.selectbox(f"카테고리 선택 #{idx+1}", list(KEYWORD_CATEGORIES.keys()), key=f"cat_{v}_{idx}")
-            
-            kw_list = KEYWORD_CATEGORIES[selected_cat]
-            
-            # 모바일 화면 폭에 맞춰 자동으로 배치되고 줄바꿈되는 3열
-            kw_cols = st.columns(3)
-            for k_i, kw in enumerate(kw_list):
-                with kw_cols[k_i % 3]:
-                    if st.button(kw, key=f"kw_btn_{v}_{idx}_{selected_cat}_{k_i}"):
-                        current_val = st.session_state.get(f"detail_{v}_{idx}", saved_detail)
-                        new_val = f"{current_val}, {kw}" if current_val else kw
-                        st.session_state[f"detail_{v}_{idx}"] = new_val
-                        st.rerun()
+        # --- 모바일 완벽 대응 가로 태그 선택 영역 ---
+        st.caption("💡 추천 키워드 누르면 메모에 자동 입력")
+        selected_cat = st.selectbox(f"카테고리 선택 #{idx+1}", list(KEYWORD_CATEGORIES.keys()), key=f"cat_{v}_{idx}")
+        
+        kw_list = KEYWORD_CATEGORIES[selected_cat]
+        
+        # 버튼을 multiselect 드롭다운 태그 형태로 제공하여 모바일 세로 길이 획기적 단축
+        selected_kws = st.multiselect(
+            f"키워드 선택 (눌러서 선택) #{idx+1}",
+            kw_list,
+            key=f"kw_multi_{v}_{idx}_{selected_cat}"
+        )
+        
+        # 멀티셀렉트에서 단어를 선택하면 바로 메모 칸에 추가
+        if selected_kws:
+            added_str = ", ".join(selected_kws)
+            current_val = st.session_state.get(f"detail_{v}_{idx}", saved_detail)
+            if added_str not in current_val:
+                new_val = f"{current_val}, {added_str}" if current_val else added_str
+                st.session_state[f"detail_{v}_{idx}"] = new_val
 
         act_detail = st.text_area(
             f"간단한 내용 메모 #{idx + 1}", 
-            value=saved_detail, 
+            value=st.session_state.get(f"detail_{v}_{idx}", saved_detail), 
             key=f"detail_{v}_{idx}", 
             placeholder="특이사항이나 기억나는 어르신 반응, 배운 점을 메모해 보세요.", 
-            height=70
+            height=80
         )
         
         st.session_state.draft_data[f"time_{idx}"] = final_time
@@ -217,7 +218,7 @@ for idx in range(st.session_state.activity_count):
                 "memo": act_detail
             })
 
-# 제어 버튼 모음 (1줄 3개 모바일 완벽 대응)
+# 제어 버튼 모음 (1줄 3개 가로 배치)
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("➕ 칸 추가"):
