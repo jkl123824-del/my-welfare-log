@@ -15,17 +15,22 @@ st.set_page_config(
 # LocalStorage 객체 생성
 local_storage = LocalStorage()
 
-# 커스텀 CSS
+# 커스텀 CSS (모바일 버튼 간격 및 텍스트 크기 최적화)
 st.markdown("""
     <style>
     .stButton>button {
         width: 100%;
         border-radius: 8px;
-        height: 3em;
+        height: 2.8em;
         font-weight: bold;
+        padding: 0px 4px !important;
+        font-size: 13px !important;
     }
     .stTextArea textarea {
         font-size: 16px !important;
+    }
+    div[data-testid="column"] {
+        padding: 0px 2px !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -65,10 +70,9 @@ if not st.session_state.draft_loaded:
 if "activity_count" not in st.session_state:
     st.session_state.activity_count = max(3, len([k for k in st.session_state.draft_data.keys() if k.startswith("name_")]))
 
-# 시간 자동 파싱 함수 (이전 활동의 종료 시간을 파악해 다음 시작시간+1시간 자동 생성)
+# 시간 자동 파싱 함수
 def get_next_time_range(prev_time_str):
     try:
-        # 시간 문자열에서 HH:MM 패턴 추출
         times = re.findall(r'\d{1,2}:\d{2}', prev_time_str)
         if len(times) >= 2:
             end_time = times[1]
@@ -117,7 +121,6 @@ KEYWORD_CATEGORIES = {
     ]
 }
 
-# 기본 시간 계산 가이드
 default_time_slots = ["09:00 ~ 10:00", "10:00 ~ 11:00", "11:00 ~ 12:00", "13:00 ~ 14:00", "14:00 ~ 15:00", "15:00 ~ 16:00", "16:00 ~ 17:00", "17:00 ~ 18:00"]
 
 # 5. 활동 내역 작성 섹션
@@ -128,11 +131,9 @@ v = st.session_state.reset_version
 last_calculated_time = ""
 
 for idx in range(st.session_state.activity_count):
-    # 저장된 값 불러오기
     saved_name = st.session_state.draft_data.get(f"name_{idx}", "")
     saved_detail = st.session_state.draft_data.get(f"detail_{idx}", "")
     
-    # 시간 자동 연동 처리
     if idx == 0:
         default_t = default_time_slots[0]
     else:
@@ -140,20 +141,18 @@ for idx in range(st.session_state.activity_count):
         
     saved_time = st.session_state.draft_data.get(f"time_{idx}", default_t)
 
-    # 상태 아이콘 및 레이블 설정
     if saved_name or saved_detail:
         status_label = f"✅ 활동 {idx + 1} ({saved_time}) - [{saved_name if saved_name else '메모 작성됨'}]"
     else:
         status_label = f"⚪ 활동 {idx + 1} ({saved_time}) - [미작성]"
 
-    # 접고 펼치는 아코디언 컴포넌트
     with st.expander(status_label, expanded=False):
         final_time = st.text_input(
             f"시간대 (수정 가능) #{idx + 1}", 
             value=saved_time, 
             key=f"time_custom_{v}_{idx}"
         )
-        last_calculated_time = final_time  # 다음 활동의 자동 시간 계산을 위해 갱신
+        last_calculated_time = final_time
 
         act_name = st.text_input(
             f"활동명 #{idx + 1}", 
@@ -162,15 +161,17 @@ for idx in range(st.session_state.activity_count):
             placeholder="예: 출근 및 청소, 라운딩 및 말벗 등"
         )
         
-        # 키워드 선택 영역
+        # --- 추천 키워드 영역 (4열 가로 배치) ---
         with st.container():
-            st.caption("💡 추천 키워드 눌러서 메모에 넣기")
+            st.caption("💡 추천 키워드 누르면 메모에 자동 입력 (가로 4열 배치)")
             selected_cat = st.selectbox(f"카테고리 선택 #{idx+1}", list(KEYWORD_CATEGORIES.keys()), key=f"cat_{v}_{idx}")
             
             kw_list = KEYWORD_CATEGORIES[selected_cat]
-            kw_cols = st.columns(3)
+            
+            # 4열 컬럼 생성하여 4개씩 옆으로 배치
+            kw_cols = st.columns(4)
             for k_i, kw in enumerate(kw_list):
-                with kw_cols[k_i % 3]:
+                with kw_cols[k_i % 4]:
                     if st.button(kw, key=f"kw_btn_{v}_{idx}_{selected_cat}_{k_i}"):
                         current_val = st.session_state.get(f"detail_{v}_{idx}", saved_detail)
                         new_val = f"{current_val}, {kw}" if current_val else kw
@@ -185,7 +186,6 @@ for idx in range(st.session_state.activity_count):
             height=70
         )
         
-        # 데이터 동기화
         st.session_state.draft_data[f"time_{idx}"] = final_time
         st.session_state.draft_data[f"name_{idx}"] = act_name
         st.session_state.draft_data[f"detail_{idx}"] = act_detail
@@ -197,7 +197,7 @@ for idx in range(st.session_state.activity_count):
                 "memo": act_detail
             })
 
-# 제어 버튼 모음
+# 제어 버튼 모음 (가로 3열 옆으로 배치)
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("➕ 칸 추가"):
