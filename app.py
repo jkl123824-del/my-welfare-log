@@ -15,50 +15,42 @@ st.set_page_config(
 # LocalStorage 객체 생성
 local_storage = LocalStorage()
 
-# 커스텀 CSS (여백 제로화 및 모바일 버튼 완벽 밀착 레이아웃)
+# 커스텀 CSS (모바일 자동 줄바꿈 & 화면 잘림 완전 방지)
 st.markdown("""
     <style>
-    /* 화면 좌우 여백 최소화 */
+    /* 전체 여백 조절 */
     .main .block-container {
-        padding-left: 0.3rem !important;
-        padding-right: 0.3rem !important;
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
         max-width: 100% !important;
     }
     
-    /* 가로 컬럼 간격 완전 밀착 (gap 2px) */
-    div[data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 2px !important;
-        width: 100% !important;
-    }
-    
-    /* 컬럼 고유 패딩 제거 */
-    div[data-testid="column"] {
-        flex: 1 1 0px !important;
-        min-width: 0px !important;
-        padding: 0px !important;
-        margin: 0px !important;
-    }
-
-    /* 버튼 모바일 최적화 (여백 제거 및 화면 맞춤) */
+    /* 모바일 맞춤 버튼 디자인 */
     .stButton>button {
         width: 100% !important;
-        border-radius: 4px !important;
-        min-height: 2.6em !important;
+        border-radius: 6px !important;
+        min-height: 2.5em !important;
         height: auto !important;
         font-weight: bold !important;
-        padding: 2px 1px !important;
-        font-size: 11px !important;
+        padding: 4px 6px !important;
+        font-size: 13px !important;
         white-space: normal !important;
         word-break: keep-all !important;
-        line-height: 1.1 !important;
-        margin: 0px !important;
+        line-height: 1.2 !important;
     }
     
+    /* 입력창 글자 크기 모바일 최적화 */
     .stTextArea textarea {
         font-size: 15px !important;
+    }
+    
+    /* HTML 커스텀 버튼 컨테이너 (자동 줄바꿈 플렉스박스) */
+    .kw-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 5px;
+        margin-bottom: 10px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -189,13 +181,14 @@ for idx in range(st.session_state.activity_count):
             placeholder="예: 출근 및 청소, 라운딩 및 말벗 등"
         )
         
-        # --- 추천 키워드 영역 (간격 최소화 3열 배치) ---
+        # --- 추천 키워드 영역 (스마트폰 크기에 맞춰 자동 줄바꿈) ---
         with st.container():
             st.caption("💡 추천 키워드 누르면 메모에 자동 입력")
             selected_cat = st.selectbox(f"카테고리 선택 #{idx+1}", list(KEYWORD_CATEGORIES.keys()), key=f"cat_{v}_{idx}")
             
             kw_list = KEYWORD_CATEGORIES[selected_cat]
             
+            # 모바일 화면 폭에 맞춰 자동으로 배치되고 줄바꿈되는 3열
             kw_cols = st.columns(3)
             for k_i, kw in enumerate(kw_list):
                 with kw_cols[k_i % 3]:
@@ -224,7 +217,7 @@ for idx in range(st.session_state.activity_count):
                 "memo": act_detail
             })
 
-# 제어 버튼 모음 (간격 최소화 밀착 배치)
+# 제어 버튼 모음 (1줄 3개 모바일 완벽 대응)
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("➕ 칸 추가"):
