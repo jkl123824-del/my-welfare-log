@@ -15,39 +15,22 @@ st.set_page_config(
 # LocalStorage 객체 생성
 local_storage = LocalStorage()
 
-# 커스텀 CSS (모바일 가로 칩/태그 배치용 스타일)
+# 커스텀 CSS
 st.markdown("""
     <style>
-    /* 스마트폰 여백 최소화 */
     .main .block-container {
         padding-left: 0.5rem !important;
         padding-right: 0.5rem !important;
         max-width: 100% !important;
     }
-    
-    /* 모바일용 키워드 태그 컨테이너 */
-    .keyword-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-top: 6px;
-        margin-bottom: 12px;
-    }
-    
-    /* 입력창 및 기본 스타일 */
     .stTextArea textarea {
         font-size: 15px !important;
     }
-    
-    /* 하단 제어 버튼 가로 배치 */
-    .control-btn-container {
-        display: flex;
-        gap: 4px;
-        width: 100%;
-        margin-top: 10px;
-    }
-    .control-btn-container > div {
-        flex: 1;
+    .stButton>button {
+        width: 100% !important;
+        border-radius: 6px !important;
+        height: 2.8em !important;
+        font-weight: bold !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -158,7 +141,9 @@ for idx in range(st.session_state.activity_count):
         
     saved_time = st.session_state.draft_data.get(f"time_{idx}", default_t)
 
-    if saved_name or saved_detail:
+    current_detail_val = st.session_state.get(f"detail_{v}_{idx}", saved_detail)
+
+    if saved_name or current_detail_val:
         status_label = f"✅ 활동 {idx + 1} ({saved_time}) - [{saved_name if saved_name else '메모 작성됨'}]"
     else:
         status_label = f"⚪ 활동 {idx + 1} ({saved_time}) - [미작성]"
@@ -178,26 +163,36 @@ for idx in range(st.session_state.activity_count):
             placeholder="예: 출근 및 청소, 라운딩 및 말벗 등"
         )
         
-        # --- 모바일 완벽 대응 가로 태그 선택 영역 ---
+        # --- 키워드 선택 및 중복 방지 추가 로직 ---
         st.caption("💡 추천 키워드 누르면 메모에 자동 입력")
         selected_cat = st.selectbox(f"카테고리 선택 #{idx+1}", list(KEYWORD_CATEGORIES.keys()), key=f"cat_{v}_{idx}")
-        
         kw_list = KEYWORD_CATEGORIES[selected_cat]
         
-        # 버튼을 multiselect 드롭다운 태그 형태로 제공하여 모바일 세로 길이 획기적 단축
         selected_kws = st.multiselect(
-            f"키워드 선택 (눌러서 선택) #{idx+1}",
+            f"키워드 선택 #{idx+1}",
             kw_list,
             key=f"kw_multi_{v}_{idx}_{selected_cat}"
         )
         
-        # 멀티셀렉트에서 단어를 선택하면 바로 메모 칸에 추가
-        if selected_kws:
-            added_str = ", ".join(selected_kws)
-            current_val = st.session_state.get(f"detail_{v}_{idx}", saved_detail)
-            if added_str not in current_val:
-                new_val = f"{current_val}, {added_str}" if current_val else added_str
-                st.session_state[f"detail_{v}_{idx}"] = new_val
+        # 이전 멀티셀렉트 상태와 비교하여 '새로 추가된' 키워드만 파악
+        last_kw_key = f"prev_kw_{v}_{idx}_{selected_cat}"
+        if last_kw_key not in st.session_state:
+            st.session_state[last_kw_key] = []
+
+        prev_kws = st.session_state[last_kw_key]
+        newly_added = [kw for kw in selected_kws if kw not in prev_kws]
+        
+        if newly_added:
+            curr_text = st.session_state.get(f"detail_{v}_{idx}", saved_detail)
+            # 기존 텍스트에 들어있지 않은 단어만 선별하여 추가
+            add_targets = [kw for kw in newly_added if kw not in curr_text]
+            if add_targets:
+                if curr_text.strip():
+                    updated_text = f"{curr_text.strip()}, {', '.join(add_targets)}"
+                else:
+                    updated_text = ", ".join(add_targets)
+                st.session_state[f"detail_{v}_{idx}"] = updated_text
+            st.session_state[last_kw_key] = selected_kws
 
         act_detail = st.text_area(
             f"간단한 내용 메모 #{idx + 1}", 
@@ -218,7 +213,7 @@ for idx in range(st.session_state.activity_count):
                 "memo": act_detail
             })
 
-# 제어 버튼 모음 (1줄 3개 가로 배치)
+# 제어 버튼 모음
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("➕ 칸 추가"):
